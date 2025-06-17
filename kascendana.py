@@ -5,38 +5,31 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import plotly.express as px
 from streamlit_option_menu import option_menu
-import locale
+# --- DIHAPUS: import locale tidak lagi dibutuhkan ---
 
-# --- DIUBAH: st.set_page_config dipindahkan ke paling atas setelah import ---
-# Ini harus menjadi perintah Streamlit pertama yang dijalankan
-st.set_page_config(page_title="Kas Kontrakan Cendana", layout="wide")
-
-# --- Pengaturan Locale (sekarang berada setelah set_page_config) ---
-try:
-    locale.setlocale(locale.LC_TIME, 'id_ID.UTF-8')
-except locale.Error:
-    try:
-        locale.setlocale(locale.LC_TIME, 'Indonesian_Indonesia.1252') # Fallback untuk Windows
-    except locale.Error:
-        st.warning("Locale Bahasa Indonesia tidak ditemukan di sistem, nama hari/bulan mungkin akan dalam Bahasa Inggris.")
-
+# --- DIHAPUS: Seluruh blok 'try...except' untuk locale dihapus untuk menghilangkan pesan warning ---
 
 # --- KONFIGURASI AWAL & KONSTANTA ---
-# st.set_page_config dipindahkan dari sini ke atas
-NAMA_PENGHUNI = ["Yopha", "Degus", "Delon", "Dipta", "Bli Danan"]
+st.set_page_config(page_title="Kas Kontrakan Cendana", layout="wide")
+
+NAMA_PENGHUNI = ["Yopha", "Degus", "Delon", "Dipta"]
 JUMLAH_IURAN = 350000
 TAHUN = 2025
 SPREADSHEET_NAME = "KAS CENDANA"
 IURAN_SHEET_NAME = f"StatusIuran{TAHUN}"
+
+# --- BARU: Daftar manual untuk nama hari dan bulan dalam Bahasa Indonesia ---
 NAMA_BULAN_ID = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni",
     "Juli", "Agustus", "September", "Oktober", "November", "Desember"
 ]
+HARI_ID = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
 
-# --- KONEKSI & FUNGSI HELPER (Tidak ada perubahan di sini) ---
+# --- KONEKSI & FUNGSI HELPER ---
+
+# ... (fungsi connect_to_gsheet, load_data, update_iuran_status_in_gsheet tidak berubah) ...
 @st.cache_resource
 def connect_to_gsheet():
-    # ... (fungsi ini tidak berubah) ...
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds_dict = st.secrets["gcp_service_account"]
@@ -50,7 +43,6 @@ def connect_to_gsheet():
 
 @st.cache_data(ttl=3600)
 def load_data(_spreadsheet, worksheet_name, sheet_type='expense'):
-    # ... (fungsi ini tidak berubah) ...
     try:
         worksheet = _spreadsheet.worksheet(worksheet_name)
         if sheet_type == 'expense':
@@ -85,7 +77,6 @@ def load_data(_spreadsheet, worksheet_name, sheet_type='expense'):
         st.stop()
 
 def update_iuran_status_in_gsheet(spreadsheet, bulan, nama, status):
-    # ... (fungsi ini tidak berubah) ...
     try:
         iuran_sheet = spreadsheet.worksheet(IURAN_SHEET_NAME)
         cell_list = iuran_sheet.findall(nama, in_column=2)
@@ -100,8 +91,15 @@ def update_iuran_status_in_gsheet(spreadsheet, bulan, nama, status):
     except Exception as e:
         st.error(f"Gagal update status iuran untuk {nama}: {e}")
 
+# --- BARU: Fungsi khusus untuk format tanggal Indonesia ---
+def format_tanggal_indonesia(dt_object):
+    nama_hari = HARI_ID[dt_object.weekday()]
+    nama_bulan = NAMA_BULAN_ID[dt_object.month - 1]
+    return f"{nama_hari}, {dt_object.day:02d} {nama_bulan} {dt_object.year}"
+
+
 # --- FUNGSI UNTUK MENAMPILKAN SETIAP MENU ---
-# ... (Semua fungsi display_... tidak ada yang berubah) ...
+
 def display_overview(df_pengeluaran, iuran_status):
     st.subheader(f"Dashboard Bulan: {bulan_terpilih.replace(str(TAHUN), '')}")
     st.markdown("---")
@@ -129,7 +127,8 @@ def display_overview(df_pengeluaran, iuran_status):
                 row_number_asli = row['row_number']
                 try:
                     tanggal_obj = datetime.strptime(row['Tanggal'], '%Y-%m-%d')
-                    tanggal_tampil = tanggal_obj.strftime('%d %B %Y')
+                    # --- DIUBAH: Menggunakan fungsi format baru kita ---
+                    tanggal_tampil = format_tanggal_indonesia(tanggal_obj)
                 except ValueError:
                     tanggal_tampil = row['Tanggal'] 
 
@@ -155,6 +154,7 @@ def display_overview(df_pengeluaran, iuran_status):
 
     with col_bawah2:
         st.subheader("Distribusi Pengeluaran")
+        # ... (logika di sini tidak berubah) ...
         df_distribusi = df_pengeluaran[df_pengeluaran.get('Keperluan') != 'Iuran Kas Bulanan']
         if df_distribusi.empty or df_distribusi['Jumlah'].sum() == 0:
             st.info("Belum ada data pengeluaran untuk ditampilkan di diagram.")
@@ -173,12 +173,19 @@ def display_overview(df_pengeluaran, iuran_status):
     else:
         df_full_display = df_pengeluaran.copy()
         try:
-            df_full_display['Tanggal'] = pd.to_datetime(df_full_display['Tanggal']).dt.strftime('%A, %d %B %Y')
+            # --- DIUBAH: Menggunakan fungsi format baru kita ---
+            # Pertama ubah ke datetime dulu
+            df_full_display['Tanggal'] = pd.to_datetime(df_full_display['Tanggal'])
+            # Lalu terapkan fungsi format kita ke setiap baris
+            df_full_display['Tanggal'] = df_full_display['Tanggal'].apply(format_tanggal_indonesia)
         except Exception:
             pass
         df_full_display = df_full_display.drop(columns=['row_number'])
         st.dataframe(df_full_display, use_container_width=True)
 
+
+# ... (Fungsi display_pembayaran_kas & display_input_pengeluaran tidak berubah) ...
+# ... (Blok MAIN APP LOGIC di paling bawah juga tidak berubah) ...
 def display_pembayaran_kas(spreadsheet, bulan_terpilih):
     st.subheader("Input Pembayaran Kas per Orang")
     st.info("Centang nama untuk menandakan sudah membayar iuran kas bulan ini. Status akan tersimpan otomatis di sheet StatusIuran2025.")
@@ -204,7 +211,7 @@ def display_input_pengeluaran(spreadsheet, bulan_terpilih):
     st.markdown("---")
 
     with st.form("input_form", clear_on_submit=True):
-        opsi_keperluan = ["Listrik", "Wifi", "PDAM", "Galon", "Keamanan", "Sewa", "Lain-Lain"]
+        opsi_keperluan = ["Listrik", "Wifi", "PDAM", "Galon", "Keamanan", "Beras", "Minyak", "Gas", "Peralatan Mandi", "Bumbu Dapur", "Lainnya"]
         opsi_pembayar = NAMA_PENGHUNI + ["Kas Bersama", "Seabank"]
         
         c1, c2, c3 = st.columns(3)
@@ -230,8 +237,6 @@ def display_input_pengeluaran(spreadsheet, bulan_terpilih):
             else:
                 st.warning("Jumlah tidak boleh nol.")
 
-# --- MAIN APP LOGIC (Tidak ada perubahan di sini) ---
-# ... (Sisa kode tidak ada yang berubah) ...
 spreadsheet = connect_to_gsheet()
 
 with st.sidebar:
