@@ -45,7 +45,14 @@ def load_data(_spreadsheet, worksheet_name, sheet_type='expense'):
                 return pd.DataFrame(columns=['Tanggal', 'Keperluan', 'Jumlah', 'Yang Bayar', 'Sudah Diganti?'])
             df = pd.DataFrame(data)
             if 'Jumlah' in df.columns:
-                df['Jumlah'] = pd.to_numeric(df['Jumlah'])
+                jumlah_str = df['Jumlah'].astype(str)
+                jumlah_bersih = (
+                    jumlah_str.str.replace('Rp', '', regex=False)
+                              .str.strip()
+                              .str.replace('.', '', regex=False)
+                              .str.replace(',', '.', regex=False)
+                )
+                df['Jumlah'] = pd.to_numeric(jumlah_bersih, errors='coerce').fillna(0)
             return df
         elif sheet_type == 'iuran':
             if not data:
