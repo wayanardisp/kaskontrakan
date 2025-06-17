@@ -7,17 +7,22 @@ import plotly.express as px
 from streamlit_option_menu import option_menu
 import locale
 
-# --- Pengaturan Locale & Konstanta (Tidak Berubah) ---
+# --- DIUBAH: st.set_page_config dipindahkan ke paling atas setelah import ---
+# Ini harus menjadi perintah Streamlit pertama yang dijalankan
+st.set_page_config(page_title="Kas Kontrakan Cendana", layout="wide")
+
+# --- Pengaturan Locale (sekarang berada setelah set_page_config) ---
 try:
     locale.setlocale(locale.LC_TIME, 'id_ID.UTF-8')
 except locale.Error:
     try:
-        locale.setlocale(locale.LC_TIME, 'Indonesian_Indonesia.1252')
+        locale.setlocale(locale.LC_TIME, 'Indonesian_Indonesia.1252') # Fallback untuk Windows
     except locale.Error:
-        st.warning("Locale Bahasa Indonesia tidak ditemukan, nama hari/bulan mungkin akan dalam Bahasa Inggris.")
+        st.warning("Locale Bahasa Indonesia tidak ditemukan di sistem, nama hari/bulan mungkin akan dalam Bahasa Inggris.")
 
-st.set_page_config(page_title="Kas Kontrakan Cendana", layout="wide")
 
+# --- KONFIGURASI AWAL & KONSTANTA ---
+# st.set_page_config dipindahkan dari sini ke atas
 NAMA_PENGHUNI = ["Yopha", "Degus", "Delon", "Dipta", "Bli Danan"]
 JUMLAH_IURAN = 350000
 TAHUN = 2025
@@ -28,7 +33,7 @@ NAMA_BULAN_ID = [
     "Juli", "Agustus", "September", "Oktober", "November", "Desember"
 ]
 
-# --- KONEKSI & FUNGSI LAINNYA (Tidak Berubah) ---
+# --- KONEKSI & FUNGSI HELPER (Tidak ada perubahan di sini) ---
 @st.cache_resource
 def connect_to_gsheet():
     # ... (fungsi ini tidak berubah) ...
@@ -95,14 +100,12 @@ def update_iuran_status_in_gsheet(spreadsheet, bulan, nama, status):
     except Exception as e:
         st.error(f"Gagal update status iuran untuk {nama}: {e}")
 
-# --- FUNGSI TAMPILAN ---
-
-# --- DIUBAH: Fungsi display_overview dengan tambahan tabel semua data ---
+# --- FUNGSI UNTUK MENAMPILKAN SETIAP MENU ---
+# ... (Semua fungsi display_... tidak ada yang berubah) ...
 def display_overview(df_pengeluaran, iuran_status):
     st.subheader(f"Dashboard Bulan: {bulan_terpilih.replace(str(TAHUN), '')}")
     st.markdown("---")
 
-    # Bagian Metrik (tidak berubah)
     jumlah_lunas = sum(1 for status in iuran_status.values() if status == "LUNAS")
     kas_masuk_dari_iuran = jumlah_lunas * JUMLAH_IURAN
     total_pengeluaran = df_pengeluaran['Jumlah'].sum() if not df_pengeluaran.empty else 0
@@ -114,7 +117,6 @@ def display_overview(df_pengeluaran, iuran_status):
     col3.metric("Sisa Kas", f"Rp {sisa_kas:,.0f}", delta_color=("inverse" if sisa_kas < 0 else "normal"))
     st.markdown("---")
 
-    # Bagian Kolom Kiri (Daftar Belum Diganti) dan Kanan (Grafik)
     col_bawah1, col_bawah2 = st.columns([0.6, 0.4])
     with col_bawah1:
         st.subheader("Daftar Pengeluaran yang Belum Diganti")
@@ -129,7 +131,7 @@ def display_overview(df_pengeluaran, iuran_status):
                     tanggal_obj = datetime.strptime(row['Tanggal'], '%Y-%m-%d')
                     tanggal_tampil = tanggal_obj.strftime('%d %B %Y')
                 except ValueError:
-                    tanggal_tampil = row['Tanggal']
+                    tanggal_tampil = row['Tanggal'] 
 
                 display_text = (
                     f"{tanggal_tampil} - "
@@ -163,32 +165,20 @@ def display_overview(df_pengeluaran, iuran_status):
             fig.update_layout(margin=dict(l=20, r=20, t=30, b=20))
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- BAGIAN BARU: Menampilkan semua data dalam satu tabel ---
     st.markdown("---")
     st.subheader("Seluruh Catatan Pengeluaran Bulan Ini")
 
     if df_pengeluaran.empty:
         st.info("Belum ada data pengeluaran untuk bulan ini.")
     else:
-        # Buat salinan untuk diformat agar tidak mengganggu data asli
         df_full_display = df_pengeluaran.copy()
-        
-        # 1. Format kolom Tanggal menjadi lebih mudah dibaca
         try:
             df_full_display['Tanggal'] = pd.to_datetime(df_full_display['Tanggal']).dt.strftime('%A, %d %B %Y')
         except Exception:
-            # Jika ada format tanggal yang salah, biarkan apa adanya
             pass
-
-        # 2. Hapus kolom 'row_number' karena tidak perlu dilihat oleh pengguna
         df_full_display = df_full_display.drop(columns=['row_number'])
-        
-        # 3. Tampilkan dataframe
         st.dataframe(df_full_display, use_container_width=True)
-    # --- AKHIR BAGIAN BARU ---
 
-
-# ... (Fungsi display_pembayaran_kas & display_input_pengeluaran tidak berubah) ...
 def display_pembayaran_kas(spreadsheet, bulan_terpilih):
     st.subheader("Input Pembayaran Kas per Orang")
     st.info("Centang nama untuk menandakan sudah membayar iuran kas bulan ini. Status akan tersimpan otomatis di sheet StatusIuran2025.")
