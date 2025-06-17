@@ -18,7 +18,7 @@ except locale.Error:
 
 st.set_page_config(page_title="Kas Kontrakan Cendana", layout="wide")
 
-NAMA_PENGHUNI = ["Yopha", "Degus", "Delon", "Dipta"]
+NAMA_PENGHUNI = ["Yopha", "Degus", "Delon", "Dipta", "Bli Danan"]
 JUMLAH_IURAN = 350000
 TAHUN = 2025
 SPREADSHEET_NAME = "KAS CENDANA"
@@ -28,9 +28,10 @@ NAMA_BULAN_ID = [
     "Juli", "Agustus", "September", "Oktober", "November", "Desember"
 ]
 
-# --- KONEKSI (Tidak Berubah) ---
+# --- KONEKSI & FUNGSI LAINNYA (Tidak Berubah) ---
 @st.cache_resource
 def connect_to_gsheet():
+    # ... (fungsi ini tidak berubah) ...
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds_dict = st.secrets["gcp_service_account"]
@@ -42,25 +43,30 @@ def connect_to_gsheet():
         st.error(f"Koneksi Gagal: {e}")
         st.stop()
 
-# --- DIUBAH: Fungsi load_data untuk menyimpan nomor baris ---
 @st.cache_data(ttl=3600)
 def load_data(_spreadsheet, worksheet_name, sheet_type='expense'):
+    # ... (fungsi ini tidak berubah) ...
     try:
         worksheet = _spreadsheet.worksheet(worksheet_name)
         if sheet_type == 'expense':
-            # Menggunakan get_all_values agar bisa mendapatkan nomor baris
             data = worksheet.get_all_values()
-            if len(data) < 2: # Jika hanya ada header atau kosong
+            if len(data) < 2:
                 return pd.DataFrame(columns=['Tanggal', 'Keperluan', 'Jumlah', 'Yang Bayar', 'Sudah Diganti?', 'row_number'])
             
             headers = data.pop(0)
             df = pd.DataFrame(data, columns=headers)
             
-            # Menambahkan kolom nomor baris asli dari spreadsheet (header di baris 1)
             df['row_number'] = range(2, len(df) + 2)
             
             if 'Jumlah' in df.columns:
-                df['Jumlah'] = pd.to_numeric(df['Jumlah'], errors='coerce').fillna(0)
+                jumlah_str = df['Jumlah'].astype(str)
+                jumlah_bersih = (
+                    jumlah_str.str.replace('Rp', '', regex=False)
+                              .str.strip()
+                              .str.replace('.', '', regex=False)
+                              .str.replace(',', '.', regex=False)
+                )
+                df['Jumlah'] = pd.to_numeric(jumlah_bersih, errors='coerce').fillna(0)
             return df
             
         elif sheet_type == 'iuran':
@@ -73,8 +79,8 @@ def load_data(_spreadsheet, worksheet_name, sheet_type='expense'):
         st.error(f"Sheet '{worksheet_name}' tidak ditemukan. Mohon buat sheet tersebut.")
         st.stop()
 
-# ... (fungsi update_iuran_status_in_gsheet tidak berubah) ...
 def update_iuran_status_in_gsheet(spreadsheet, bulan, nama, status):
+    # ... (fungsi ini tidak berubah) ...
     try:
         iuran_sheet = spreadsheet.worksheet(IURAN_SHEET_NAME)
         cell_list = iuran_sheet.findall(nama, in_column=2)
@@ -88,14 +94,15 @@ def update_iuran_status_in_gsheet(spreadsheet, bulan, nama, status):
             iuran_sheet.append_row([bulan, nama, status])
     except Exception as e:
         st.error(f"Gagal update status iuran untuk {nama}: {e}")
-        
+
 # --- FUNGSI TAMPILAN ---
 
-# --- DIUBAH: Fungsi display_overview untuk menambahkan tombol update ---
+# --- DIUBAH: Fungsi display_overview dengan tambahan tabel semua data ---
 def display_overview(df_pengeluaran, iuran_status):
     st.subheader(f"Dashboard Bulan: {bulan_terpilih.replace(str(TAHUN), '')}")
     st.markdown("---")
 
+    # Bagian Metrik (tidak berubah)
     jumlah_lunas = sum(1 for status in iuran_status.values() if status == "LUNAS")
     kas_masuk_dari_iuran = jumlah_lunas * JUMLAH_IURAN
     total_pengeluaran = df_pengeluaran['Jumlah'].sum() if not df_pengeluaran.empty else 0
@@ -107,6 +114,7 @@ def display_overview(df_pengeluaran, iuran_status):
     col3.metric("Sisa Kas", f"Rp {sisa_kas:,.0f}", delta_color=("inverse" if sisa_kas < 0 else "normal"))
     st.markdown("---")
 
+    # Bagian Kolom Kiri (Daftar Belum Diganti) dan Kanan (Grafik)
     col_bawah1, col_bawah2 = st.columns([0.6, 0.4])
     with col_bawah1:
         st.subheader("Daftar Pengeluaran yang Belum Diganti")
@@ -115,13 +123,16 @@ def display_overview(df_pengeluaran, iuran_status):
         if df_belum_diganti.empty:
             st.success("Semua pengeluaran sudah diganti. ✅")
         else:
-            # Loop melalui setiap baris data dan buat tombolnya
             for index, row in df_belum_diganti.iterrows():
-                # Format tampilan agar mudah dibaca
                 row_number_asli = row['row_number']
-                tanggal_obj = datetime.strptime(row['Tanggal'], '%Y-%m-%d')
+                try:
+                    tanggal_obj = datetime.strptime(row['Tanggal'], '%Y-%m-%d')
+                    tanggal_tampil = tanggal_obj.strftime('%d %B %Y')
+                except ValueError:
+                    tanggal_tampil = row['Tanggal']
+
                 display_text = (
-                    f"{tanggal_obj.strftime('%d %B %Y')} - "
+                    f"{tanggal_tampil} - "
                     f"**{row['Keperluan']}** (Rp {row['Jumlah']:,.0f}) - "
                     f"Dibayar oleh: *{row['Yang Bayar']}*"
                 )
@@ -129,33 +140,55 @@ def display_overview(df_pengeluaran, iuran_status):
                 c1, c2 = st.columns([0.8, 0.2])
                 c1.write(display_text, unsafe_allow_html=True)
                 
-                # Buat tombol dengan key unik berdasarkan nomor baris
                 if c2.button("Tandai Lunas", key=f"update_{row_number_asli}"):
                     try:
                         worksheet = spreadsheet.worksheet(bulan_terpilih)
-                        # Update sel di kolom ke-5 (kolom 'Sudah Diganti?')
                         worksheet.update_cell(row_number_asli, 5, "SUDAH")
                         st.success(f"Status '{row['Keperluan']}' berhasil diupdate!")
-                        st.cache_data.clear() # Hapus cache
-                        st.rerun() # Muat ulang halaman
+                        st.cache_data.clear()
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Gagal mengupdate: {e}")
                 st.markdown("---")
 
-
     with col_bawah2:
         st.subheader("Distribusi Pengeluaran")
-        if df_pengeluaran.empty:
-            st.info("Belum ada data pengeluaran untuk ditampilkan.")
+        df_distribusi = df_pengeluaran[df_pengeluaran.get('Keperluan') != 'Iuran Kas Bulanan']
+        if df_distribusi.empty or df_distribusi['Jumlah'].sum() == 0:
+            st.info("Belum ada data pengeluaran untuk ditampilkan di diagram.")
         else:
-            # Filter pengeluaran saja, jangan ikutkan iuran kas jika ada
-            df_distribusi = df_pengeluaran[df_pengeluaran['Keperluan'] != 'Iuran Kas Bulanan']
             distribusi = df_distribusi.groupby('Keperluan')['Jumlah'].sum().reset_index()
+            distribusi = distribusi[distribusi['Jumlah'] > 0]
             fig = px.pie(distribusi, values='Jumlah', names='Keperluan', hole=0.3)
             fig.update_layout(margin=dict(l=20, r=20, t=30, b=20))
             st.plotly_chart(fig, use_container_width=True)
 
-# ... (fungsi display_pembayaran_kas dan display_input_pengeluaran tidak berubah) ...
+    # --- BAGIAN BARU: Menampilkan semua data dalam satu tabel ---
+    st.markdown("---")
+    st.subheader("Seluruh Catatan Pengeluaran Bulan Ini")
+
+    if df_pengeluaran.empty:
+        st.info("Belum ada data pengeluaran untuk bulan ini.")
+    else:
+        # Buat salinan untuk diformat agar tidak mengganggu data asli
+        df_full_display = df_pengeluaran.copy()
+        
+        # 1. Format kolom Tanggal menjadi lebih mudah dibaca
+        try:
+            df_full_display['Tanggal'] = pd.to_datetime(df_full_display['Tanggal']).dt.strftime('%A, %d %B %Y')
+        except Exception:
+            # Jika ada format tanggal yang salah, biarkan apa adanya
+            pass
+
+        # 2. Hapus kolom 'row_number' karena tidak perlu dilihat oleh pengguna
+        df_full_display = df_full_display.drop(columns=['row_number'])
+        
+        # 3. Tampilkan dataframe
+        st.dataframe(df_full_display, use_container_width=True)
+    # --- AKHIR BAGIAN BARU ---
+
+
+# ... (Fungsi display_pembayaran_kas & display_input_pengeluaran tidak berubah) ...
 def display_pembayaran_kas(spreadsheet, bulan_terpilih):
     st.subheader("Input Pembayaran Kas per Orang")
     st.info("Centang nama untuk menandakan sudah membayar iuran kas bulan ini. Status akan tersimpan otomatis di sheet StatusIuran2025.")
@@ -181,8 +214,8 @@ def display_input_pengeluaran(spreadsheet, bulan_terpilih):
     st.markdown("---")
 
     with st.form("input_form", clear_on_submit=True):
-        opsi_keperluan = ["Listrik", "Wifi", "PDAM", "Galon", "Keamanan", "Beras", "Minyak", "Gas", "Peralatan Mandi", "Bumbu Dapur", "Lainnya"]
-        opsi_pembayar = NAMA_PENGHUNI + ["Seabank"]
+        opsi_keperluan = ["Listrik", "Wifi", "PDAM", "Galon", "Keamanan", "Sewa", "Lain-Lain"]
+        opsi_pembayar = NAMA_PENGHUNI + ["Kas Bersama", "Seabank"]
         
         c1, c2, c3 = st.columns(3)
         tanggal = c1.date_input("Tanggal", value=datetime.now())
@@ -208,7 +241,7 @@ def display_input_pengeluaran(spreadsheet, bulan_terpilih):
                 st.warning("Jumlah tidak boleh nol.")
 
 # --- MAIN APP LOGIC (Tidak ada perubahan di sini) ---
-# ... (Semua sisa kode tidak ada yang berubah) ...
+# ... (Sisa kode tidak ada yang berubah) ...
 spreadsheet = connect_to_gsheet()
 
 with st.sidebar:
