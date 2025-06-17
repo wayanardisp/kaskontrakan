@@ -18,7 +18,7 @@ except locale.Error:
     try:
         locale.setlocale(locale.LC_TIME, 'Indonesian_Indonesia.1252') # Fallback untuk Windows
     except locale.Error:
-        st.warning("Locale Bahasa Indonesia tidak ditemukan di sistem, nama hari/bulan mungkin akan dalam Bahasa Inggris.")
+        
 
 
 # --- KONFIGURASI AWAL & KONSTANTA ---
